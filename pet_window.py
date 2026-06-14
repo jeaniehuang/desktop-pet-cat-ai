@@ -13,9 +13,9 @@ import random
 EATING_GIFS = ["running.gif", "running-left.gif", "running-right.gif"]
 
 STATE_GIF = {
-    "sleeping": "review.gif",   # resting/review pose
+    "sleeping": "waiting.gif",  # quiet seated pose
     "eating":   "running.gif",  # working (randomized on state change)
-    "walking":  "running.gif",  # break reminder jumps
+    "walking":  "review.gif",   # break reminder
     "resting":  "idle.gif",     # idle/趴着
 }
 
