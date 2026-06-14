@@ -50,6 +50,7 @@ Double-click `dist/DesktopPet.exe` or use the desktop shortcut.
 ## GIF Credits / GIF 来源
 
 Cat animations from [YueXinMiao (月薪喵)](https://github.com/Lumi-arta/desktop_cat) by Lumi-arta.
+https://github.com/Tinsiag/YueXinMiaoPet
 
 ## License / 许可证
 
