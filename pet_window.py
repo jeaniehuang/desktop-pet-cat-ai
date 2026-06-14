@@ -190,30 +190,39 @@ class PetWindow(QWidget):
             r = 2 + phase * 2
             painter.drawEllipse(QPointF(x, y), r, r)
 
-    # ── WALKING overlay ──
+    # ── WALKING/BREAK overlay ──
 
     def _draw_walking_overlay(self, painter: QPainter, half: float):
-        """Motion lines and dust."""
+        """Dizzy effect — spinning stars and 晕晕晕 text."""
         import math
         t = self._frame
 
-        # Speed lines behind
-        for i in range(3):
-            lx = -half - 6 - i * 10
-            ly = -6 + i * 8
-            alpha = 160 - i * 40
-            painter.setPen(QPen(QColor(120, 120, 150, alpha), 2))
-            painter.drawLine(QPointF(lx, ly), QPointF(lx - 12, ly + 2))
+        # Spinning stars around head
+        star_chars = ["💫", "⭐", "✨"]
+        for i, ch in enumerate(star_chars):
+            angle = t * 3 + i * 2.1
+            radius = half * 0.5 + math.sin(t * 4 + i) * 8
+            sx = math.cos(angle) * radius
+            sy = -half * 0.3 + math.sin(angle * 1.5) * radius * 0.5
+            font = painter.font()
+            font.setPointSize(14 + i * 2)
+            painter.setFont(font)
+            painter.setPen(QColor(255, 255, 200, 220 - i * 40))
+            painter.drawText(QPointF(sx - 8, sy), ch)
 
-        # Dust at feet
-        painter.setPen(Qt.NoPen)
-        for i in range(3):
-            phase = t * 8 + i * 2.1
-            px = -8 + i * 10 + math.sin(phase) * 5
-            py = half * 0.6 - abs(math.cos(phase)) * 5
-            r = 3 + abs(math.sin(phase)) * 3
-            painter.setBrush(QColor(200, 190, 170, 90))
-            painter.drawEllipse(QPointF(px, py), r, r * 0.5)
+        # "晕" text circling
+        dizzy_chars = ["晕", "晕", "晕"]
+        for i, ch in enumerate(dizzy_chars):
+            angle = t * 5 + i * 2.09
+            radius = half * 0.35
+            dx = math.cos(angle) * radius
+            dy = -half * 0.2 + math.sin(angle * 2) * radius * 0.4
+            font = painter.font()
+            font.setPointSize(12 + i)
+            alpha = int(180 + 75 * math.sin(t * 3 + i))
+            painter.setFont(font)
+            painter.setPen(QColor(255, 200, 100, max(30, alpha)))
+            painter.drawText(QPointF(dx - 10, dy), ch)
 
     # ── drag ──
 
