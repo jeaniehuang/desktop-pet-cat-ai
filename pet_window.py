@@ -1,19 +1,29 @@
-"""PetWindow — frameless transparent always-on-top window showing the cat."""
+"""PetWindow — frameless transparent always-on-top window with animated cat GIFs."""
 
-import math
-import random
-from PySide6.QtCore import Qt, Property, QPoint, QPointF, QRectF
+import os
+from PySide6.QtCore import Qt, Property, QPoint, QPointF, QRectF, QTimer
 from PySide6.QtGui import (QPainter, QPainterPath, QPixmap, QColor,
-                            QPen, QBrush, QFont, QTransform)
+                            QPen, QBrush, QMovie)
 from PySide6.QtWidgets import QWidget
 
 
+# Map our states to the closest available GIFs
+STATE_GIF = {
+    "sleeping": "waiting.gif",   # quiet seated pose
+    "eating":   "waving.gif",    # waving paw = eating motion
+    "walking":  "running.gif",   # run cycle for break jumps
+    "resting":  "idle.gif",      # idle/趴着
+}
+
+GIFS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "gifs")
+
+
 class PetWindow(QWidget):
-    """A circular, frameless, transparent, always-on-top cat window."""
+    """Circular, frameless, transparent cat window playing animated GIFs."""
 
-    SIZE = 128
+    SIZE = 130
 
-    def __init__(self, image_path: str):
+    def __init__(self):
         super().__init__()
         self.setWindowFlags(
             Qt.FramelessWindowHint
@@ -26,49 +36,55 @@ class PetWindow(QWidget):
         self._scale = 1.0
         self._rotation = 0.0
         self._state = "sleeping"
-
-        # Load image
-        self.original = QPixmap(image_path)
-        if self.original.isNull():
-            raise FileNotFoundError(f"Cannot load image: {image_path}")
+        self._movie: QMovie | None = None
+        self._current_frame: QPixmap | None = None
 
         self.setFixedSize(self.SIZE, self.SIZE)
         self._drag_offset = QPoint()
 
-        self._scaled = self.original.scaled(
-            self.SIZE, self.SIZE,
-            Qt.KeepAspectRatioByExpanding,
-            Qt.SmoothTransformation
-        )
+        # Load initial GIF
+        self._load_gif("sleeping")
 
-        # Frame counters
+        # Frame tick for overlays
         self._frame = 0.0
 
-        # Sleeping state
-        self._snore_t = 0.0
-
-        # Eating state — emoji food particles: (x, y, vy, life, emoji_char)
-        self._food: list[list] = []
-        self._eat_spawn_timer = 0.0
-
-        # Walking state — foot bob phase
-        self._walk_bob = 0.0
-
-        # Position at bottom-right
+        # Position bottom-right
         screen = QWidget.screen(self) or QWidget.primaryScreen(self)
         if screen:
             geo = screen.availableGeometry()
             self.move(geo.right() - self.SIZE - 30,
                       geo.bottom() - self.SIZE - 30)
 
+    # ── GIF loading ──
+
+    def _load_gif(self, state: str):
+        """Load and start the GIF for the given state."""
+        filename = STATE_GIF.get(state, "idle.gif")
+        path = os.path.join(GIFS_DIR, filename)
+
+        if self._movie:
+            self._movie.stop()
+            self._movie.deleteLater()
+
+        self._movie = QMovie(path, parent=self)
+        self._movie.setCacheMode(QMovie.CacheAll)
+        self._movie.frameChanged.connect(self._on_frame_changed)
+        self._movie.start()
+
+    def _on_frame_changed(self, _frame_num: int):
+        """Capture the current GIF frame and trigger repaint."""
+        if self._movie:
+            self._current_frame = self._movie.currentPixmap()
+            self.update()
+
     # ── state ──
 
     def set_state(self, state: str):
+        if state == self._state:
+            return
         self._state = state
         self._frame = 0.0
-        self._food.clear()
-        self._snore_t = 0.0
-        self._walk_bob = 0.0
+        self._load_gif(state)
         self.update()
 
     # ── animatable Qt properties ──
@@ -81,36 +97,10 @@ class PetWindow(QWidget):
     def set_rotation(self, v: float): self._rotation = v; self.update()
     rotation = Property(float, get_rotation, set_rotation)
 
-    # ── frame tick ──
+    # ── frame tick (drives overlay animations) ──
 
     def tick(self, dt: float):
         self._frame += dt
-
-        if self._state == "sleeping":
-            self._snore_t += dt
-            if self._snore_t > 4.0:
-                self._snore_t = 0.0
-
-        elif self._state == "eating":
-            self._eat_spawn_timer += dt
-            if self._eat_spawn_timer > 0.3 and len(self._food) < 12:
-                self._eat_spawn_timer = 0.0
-                emojis = ["🐟", "🍣", "🦴", "🍖"]
-                self._food.append([
-                    random.uniform(-25, 25),   # x
-                    random.uniform(5, 25),      # start y (mouth area)
-                    random.uniform(-35, -20),   # vy (upward)
-                    random.uniform(1.0, 1.8),   # lifetime
-                    random.choice(emojis),
-                ])
-            # Update food particles
-            for f in self._food:
-                f[1] += f[2] * dt          # move
-                f[3] -= dt                 # decay life
-
-        elif self._state == "walking":
-            self._walk_bob += dt * 12
-
         self.update()
 
     # ── painting ──
@@ -121,14 +111,8 @@ class PetWindow(QWidget):
         painter.setRenderHint(QPainter.SmoothPixmapTransform)
 
         half = self.SIZE / 2
-
         painter.translate(half, half)
         painter.scale(self._scale, self._scale)
-
-        # Walking bob
-        if self._state == "walking":
-            painter.translate(0, math.sin(self._walk_bob) * 6)
-
         painter.rotate(self._rotation)
 
         # Circular clip
@@ -136,163 +120,100 @@ class PetWindow(QWidget):
         clip.addEllipse(QPointF(0, 0), half - 1, half - 1)
         painter.setClipPath(clip)
 
-        # ── Draw cat ──
-        if self._state == "sleeping":
-            # Sleepy blue tint
-            painter.drawPixmap(-half, -half, self._scaled)
-            painter.fillRect(-half, -half, self.SIZE, self.SIZE,
-                             QColor(30, 40, 90, 80))
+        # Draw current GIF frame
+        if self._current_frame and not self._current_frame.isNull():
+            scaled = self._current_frame.scaled(
+                self.SIZE, self.SIZE,
+                Qt.KeepAspectRatioByExpanding,
+                Qt.SmoothTransformation
+            )
+            painter.drawPixmap(-half, -half, scaled)
         else:
-            painter.drawPixmap(-half, -half, self._scaled)
+            # Fallback — colored circle
+            painter.setBrush(QColor(180, 180, 200))
+            painter.setPen(Qt.NoPen)
+            painter.drawEllipse(QPointF(0, 0), half - 1, half - 1)
 
-        # ── State overlays ──
+        # State overlays
         if self._state == "sleeping":
-            self._draw_sleeping(painter, half)
+            self._draw_sleeping_overlay(painter, half)
         elif self._state == "eating":
-            self._draw_eating(painter, half)
+            self._draw_eating_overlay(painter, half)
         elif self._state == "walking":
-            self._draw_walking(painter, half)
+            self._draw_walking_overlay(painter, half)
 
         painter.end()
 
-    # ═══════════════════════════════════════════
-    #  SLEEPING — closed eyes, snore bubble, Zzz
-    # ═══════════════════════════════════════════
+    # ── SLEEPING overlay ──
 
-    def _draw_sleeping(self, painter: QPainter, half: float):
-        # Bold closed eyes — thick horizontal lines
-        pen = QPen(QColor(20, 20, 30, 220), 3.5)
-        pen.setCapStyle(Qt.RoundCap)
-        painter.setPen(pen)
-
-        eye_y = -half * 0.22
-        eye_len = half * 0.22
-        painter.drawLine(QPointF(-half * 0.4, eye_y),
-                         QPointF(-half * 0.4 + eye_len, eye_y))
-        painter.drawLine(QPointF(half * 0.15, eye_y),
-                         QPointF(half * 0.15 + eye_len, eye_y))
-
-        # Snore bubble
-        t = self._snore_t
-        if t < 3.5:
-            r = 4 + t * 6
-            alpha = int(220 * (1 - t / 3.8))
-            bx = half * 0.3 + math.sin(t * 2) * 4
-            by = -half * 0.25 - t * 14
-            painter.setPen(QPen(QColor(150, 180, 240, max(0, alpha)), 2))
-            painter.setBrush(QColor(200, 220, 255, max(0, alpha)))
-            painter.drawEllipse(QPointF(bx, by), r, r)
-
-        # Large Zzz text floating
-        if 0.5 < t < 3.0:
-            font = QFont("Segoe UI Emoji", 16)
-            painter.setFont(font)
-            painter.setPen(QColor(180, 200, 255, int(200 * (1 - t / 3.5))))
-            zy = -half * 0.1 - (t - 0.5) * 20
-            painter.drawText(QPointF(half * 0.25, zy), "Z")
-
-    # ═══════════════════════════════════════════
-    #  EATING — mouth, food bowl, food particles
-    # ═══════════════════════════════════════════
-
-    def _draw_eating(self, painter: QPainter, half: float):
-        # ── Food bowl (bottom) ──
-        bowl_y = half * 0.55
-        bowl_w = half * 0.55
-
-        # Bowl outer
-        painter.setPen(QPen(QColor(140, 90, 40), 3))
-        painter.setBrush(QColor(180, 130, 70, 200))
-        painter.drawEllipse(QPointF(0, bowl_y), bowl_w, bowl_w * 0.30)
-
-        # Bowl rim highlight
-        painter.setPen(QPen(QColor(220, 180, 120), 2))
-        painter.setBrush(Qt.NoBrush)
-        painter.drawEllipse(QPointF(0, bowl_y - 2), bowl_w - 1, (bowl_w - 1) * 0.28)
-
-        # Food in bowl
-        painter.setPen(Qt.NoPen)
-        painter.setBrush(QColor(180, 130, 60, 180))
-        for dx in [-12, -4, 5, 14]:
-            painter.drawEllipse(QPointF(dx, bowl_y + dx * 0.1), 6, 3)
-
-        # ── Mouth ──
-        chew = abs(math.sin(self._frame * 10)) * 0.6 + 0.3
-        mouth_y = half * 0.15
-        painter.setPen(Qt.NoPen)
-        painter.setBrush(QColor(50, 20, 20, 200))
-        mouth_w = half * 0.25 * chew
-        mouth_h = half * 0.13 * chew
-        painter.drawEllipse(QPointF(0, mouth_y), mouth_w, mouth_h)
-
-        # Tongue
-        if chew > 0.5:
-            painter.setBrush(QColor(220, 100, 120, 150))
-            painter.drawEllipse(QPointF(0, mouth_y + mouth_h * 0.3), mouth_w * 0.6, mouth_h * 0.4)
-
-        # ── Food particles (emoji) flying up ──
-        font = QFont("Segoe UI Emoji", 18)
-        painter.setFont(font)
-        for f in self._food[:]:
-            life_pct = f[3] / 1.8
-            if life_pct <= 0:
-                self._food.remove(f)
-                continue
-            alpha = int(255 * life_pct)
-            painter.setPen(QColor(255, 255, 255, alpha))
-            painter.drawText(QPointF(f[0] - 9, f[1]), f[4])
-
-    # ═══════════════════════════════════════════
-    #  WALKING — big eyes, motion lines, dust
-    # ═══════════════════════════════════════════
-
-    def _draw_walking(self, painter: QPainter, half: float):
-        # ── Big alert eyes ──
-        eye_y = -half * 0.20
-        eye_r = 8
-        painter.setPen(QPen(QColor(40, 40, 40), 2))
-        painter.setBrush(QColor(255, 255, 255, 240))
-
-        # Left eye
-        painter.drawEllipse(QPointF(-half * 0.28, eye_y), eye_r, eye_r)
-        # Right eye
-        painter.drawEllipse(QPointF(half * 0.28, eye_y), eye_r, eye_r)
-
-        # Pupils — look in movement direction
-        painter.setBrush(QColor(20, 20, 20))
-        painter.drawEllipse(QPointF(-half * 0.26, eye_y), 3.5, 3.5)
-        painter.drawEllipse(QPointF(half * 0.30, eye_y), 3.5, 3.5)
-
-        # Eye shine
-        painter.setBrush(QColor(255, 255, 255))
-        painter.drawEllipse(QPointF(-half * 0.24, eye_y - 2), 1.5, 1.5)
-        painter.drawEllipse(QPointF(half * 0.32, eye_y - 2), 1.5, 1.5)
-
-        # ── Motion lines behind ──
-        for i in range(3):
-            lx = -half - 10 - i * 12
-            ly = -8 + i * 9
-            painter.setPen(QPen(QColor(140, 140, 160, 160 - i * 40), 2.5))
-            painter.drawLine(QPointF(lx, ly), QPointF(lx - 14, ly + 2))
-            painter.drawLine(QPointF(lx - 3, ly + 1), QPointF(lx - 17, ly + 3))
-
-        # ── Dust clouds at feet ──
-        painter.setPen(Qt.NoPen)
-        for i in range(3):
-            phase = self._walk_bob + i * 2.1
-            px = -10 + i * 12 + math.sin(phase) * 4
-            py = half * 0.6 - abs(math.cos(phase)) * 6
-            r = 4 + abs(math.sin(phase)) * 4
-            painter.setBrush(QColor(200, 190, 170, 100))
-            painter.drawEllipse(QPointF(px, py), r, r * 0.5)
-
-        # ── Little legs ──
-        painter.setPen(QPen(QColor(60, 40, 30, 180), 3))
-        painter.setBrush(QColor(70, 50, 30, 160))
+    def _draw_sleeping_overlay(self, painter: QPainter, half: float):
+        """Zzz floating above the cat."""
+        import math
+        t = self._frame
+        # Pulsing Zzz
         for i in range(2):
-            lx = -half * 0.3 + i * half * 0.6
-            ly = half * 0.75 - abs(math.sin(self._walk_bob + i * 3.14)) * 8
-            painter.drawEllipse(QPointF(lx, ly), 8, 12)
+            phase = t * 1.5 + i * 1.2
+            alpha = int(180 * (0.5 + 0.5 * math.sin(phase)))
+            if alpha < 30:
+                continue
+            font = painter.font()
+            font.setPointSize(14 + i * 4)
+            painter.setFont(font)
+            painter.setPen(QColor(150, 180, 240, alpha))
+            zy = -half * 0.4 - (phase % 3) * 10
+            painter.drawText(QPointF(half * 0.3 - i * 10, zy), "Z")
+
+    # ── EATING overlay ──
+
+    def _draw_eating_overlay(self, painter: QPainter, half: float):
+        """Food particles floating up."""
+        import math, random
+        t = self._frame
+
+        # Food bowl at bottom
+        bowl_y = half * 0.55
+        bowl_w = half * 0.45
+        painter.setPen(QPen(QColor(140, 90, 40), 2.5))
+        painter.setBrush(QColor(180, 130, 70, 180))
+        painter.drawEllipse(QPointF(0, bowl_y), bowl_w, bowl_w * 0.28)
+
+        # Food particles (use emoji via text)
+        font = painter.font()
+        font.setPointSize(16)
+        painter.setFont(font)
+        emojis = ["🐟", "🍣", "🦴"]
+        for i, emoji in enumerate(emojis):
+            phase = (t * 3 + i * 2.1) % 3.0
+            alpha = int(255 * max(0, 1 - phase / 3.0))
+            painter.setPen(QColor(255, 255, 255, alpha))
+            x = math.sin(phase * 4 + i) * 20
+            y = half * 0.1 - phase * 30
+            painter.drawText(QPointF(x - 8, y), emoji)
+
+    # ── WALKING overlay ──
+
+    def _draw_walking_overlay(self, painter: QPainter, half: float):
+        """Motion lines and dust."""
+        import math
+        t = self._frame
+
+        # Speed lines behind
+        for i in range(3):
+            lx = -half - 6 - i * 10
+            ly = -6 + i * 8
+            alpha = 160 - i * 40
+            painter.setPen(QPen(QColor(120, 120, 150, alpha), 2))
+            painter.drawLine(QPointF(lx, ly), QPointF(lx - 12, ly + 2))
+
+        # Dust at feet
+        painter.setPen(Qt.NoPen)
+        for i in range(3):
+            phase = t * 8 + i * 2.1
+            px = -8 + i * 10 + math.sin(phase) * 5
+            py = half * 0.6 - abs(math.cos(phase)) * 5
+            r = 3 + abs(math.sin(phase)) * 3
+            painter.setBrush(QColor(200, 190, 170, 90))
+            painter.drawEllipse(QPointF(px, py), r, r * 0.5)
 
     # ── drag ──
 

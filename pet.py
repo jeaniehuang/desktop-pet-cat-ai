@@ -58,15 +58,8 @@ def main():
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
 
-    # Determine image path
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    image_path = os.path.join(script_dir, "cat.jpg")
-    if not os.path.exists(image_path):
-        print(f"Warning: {image_path} not found, using fallback")
-        image_path = os.path.join(script_dir, "cat.jpg")  # still try
-
     # Create components
-    window = PetWindow(image_path)
+    window = PetWindow()
     window.show()
 
     monitor = StatusMonitor(interval_ms=1000)
