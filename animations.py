@@ -112,11 +112,10 @@ class AnimationManager(QObject):
     # ── break reminder ──
 
     def _trigger_break(self):
-        """Patrol along the bottom of the screen."""
+        """Slide along the bottom of the screen from right to left."""
         was_eating = self._state == "eating"
         self._stop_all()
 
-        # Switch to walking/dizzy overlay
         self._win.set_state("walking")
 
         screen = QWidget.screen(self._win) or QWidget.primaryScreen(self._win)
@@ -127,38 +126,19 @@ class AnimationManager(QObject):
 
         geo = screen.availableGeometry()
         ww, wh = self._win.width(), self._win.height()
-        start_pos = self._win.pos()
 
-        # Bottom edge patrol line
         y = geo.bottom() - wh - 10
-        left_x = geo.left() + 10
         right_x = geo.right() - ww - 10
+        left_x = geo.left() + 10
 
-        patrol = QSequentialAnimationGroup()
+        # Single slide: current position → bottom-left
+        slide = QPropertyAnimation(self._win, b"geometry")
+        slide.setDuration(4000)
+        slide.setStartValue(QRect(right_x, y, ww, wh))
+        slide.setEndValue(QRect(left_x, y, ww, wh))
+        slide.setEasingCurve(QEasingCurve.Linear)
 
-        # Segment 1: go to bottom-left
-        anim1 = QPropertyAnimation(self._win, b"geometry")
-        anim1.setDuration(1500)
-        anim1.setStartValue(QRect(start_pos.x(), start_pos.y(), ww, wh))
-        anim1.setEndValue(QRect(left_x, y, ww, wh))
-        anim1.setEasingCurve(QEasingCurve.InOutCubic)
-        patrol.addAnimation(anim1)
-
-        # Segment 2: walk across bottom to right
-        anim2 = QPropertyAnimation(self._win, b"geometry")
-        anim2.setDuration(3000)
-        anim2.setEndValue(QRect(right_x, y, ww, wh))
-        anim2.setEasingCurve(QEasingCurve.InOutCubic)
-        patrol.addAnimation(anim2)
-
-        # Segment 3: walk back to left
-        anim3 = QPropertyAnimation(self._win, b"geometry")
-        anim3.setDuration(3000)
-        anim3.setEndValue(QRect(left_x, y, ww, wh))
-        anim3.setEasingCurve(QEasingCurve.InOutCubic)
-        patrol.addAnimation(anim3)
-
-        def _on_patrol_finished():
+        def _on_slide_finished():
             self._win.clamp_to_screen()
             new_state = "eating" if was_eating else "sleeping"
             self._state = new_state
@@ -170,11 +150,10 @@ class AnimationManager(QObject):
             self._break_timer.start()
             self.break_finished.emit()
 
-        patrol.finished.connect(_on_patrol_finished)
-        patrol.start()
-        self._animations = []
+        slide.finished.connect(_on_slide_finished)
+        slide.start()
+        self._animations = [slide]
 
-        # Show tooltip
         self._show_break_tooltip()
 
     def _show_break_tooltip(self):
