@@ -14,6 +14,7 @@ from PySide6.QtWidgets import QApplication
 
 from pet_window import PetWindow
 from status_monitor import StatusMonitor
+from status_monitor import STATUS_FILE
 from animations import AnimationManager
 from tray import TrayIcon
 
@@ -85,7 +86,7 @@ def main():
         """Force a state from tray — write to the light file to stay in sync."""
         emoji = "🟢" if state == "eating" else "🔴"
         try:
-            with open("/tmp/claude-status-light", "w", encoding="utf-8") as f:
+            with open(STATUS_FILE, "w", encoding="utf-8") as f:
                 f.write(emoji + "\n")
         except OSError:
             pass

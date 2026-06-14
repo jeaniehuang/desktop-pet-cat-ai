@@ -1,8 +1,14 @@
-"""StatusMonitor — polls /tmp/claude-status-light and emits state changes."""
+"""StatusMonitor — polls claude-status-light and emits state changes."""
 
+import os
 from PySide6.QtCore import QObject, Signal, QTimer
 
-STATUS_FILE = "/tmp/claude-status-light"
+# On Windows (Git Bash), /tmp maps to %TEMP%, but native Python
+# sees a different /tmp. Resolve to the actual Windows path.
+if os.name == "nt":
+    STATUS_FILE = os.path.join(os.environ.get("TEMP", os.environ.get("TMP", "/tmp")), "claude-status-light")
+else:
+    STATUS_FILE = "/tmp/claude-status-light"
 
 
 class StatusMonitor(QObject):
