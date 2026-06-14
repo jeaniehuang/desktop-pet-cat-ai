@@ -7,11 +7,15 @@ from PySide6.QtGui import (QPainter, QPainterPath, QPixmap, QColor,
 from PySide6.QtWidgets import QWidget
 
 
-# Map our states to the closest available GIFs
+import random
+
+# Eating = working, randomly pick from three running directions
+EATING_GIFS = ["running.gif", "running-left.gif", "running-right.gif"]
+
 STATE_GIF = {
     "sleeping": "waiting.gif",   # quiet seated pose
-    "eating":   "waving.gif",    # waving paw = eating motion
-    "walking":  "running.gif",   # run cycle for break jumps
+    "eating":   "running.gif",   # working (randomized on state change)
+    "walking":  "running.gif",   # break reminder jumps
     "resting":  "idle.gif",      # idle/趴着
 }
 
@@ -59,7 +63,10 @@ class PetWindow(QWidget):
 
     def _load_gif(self, state: str):
         """Load and start the GIF for the given state."""
-        filename = STATE_GIF.get(state, "idle.gif")
+        if state == "eating":
+            filename = random.choice(EATING_GIFS)
+        else:
+            filename = STATE_GIF.get(state, "idle.gif")
         path = os.path.join(GIFS_DIR, filename)
 
         if self._movie:
@@ -163,32 +170,25 @@ class PetWindow(QWidget):
             zy = -half * 0.4 - (phase % 3) * 10
             painter.drawText(QPointF(half * 0.3 - i * 10, zy), "Z")
 
-    # ── EATING overlay ──
+    # ── EATING/WORKING overlay ──
 
     def _draw_eating_overlay(self, painter: QPainter, half: float):
-        """Food particles floating up."""
-        import math, random
+        """Working effect — speed lines and sparkles."""
+        import math
         t = self._frame
 
-        # Food bowl at bottom
-        bowl_y = half * 0.55
-        bowl_w = half * 0.45
-        painter.setPen(QPen(QColor(140, 90, 40), 2.5))
-        painter.setBrush(QColor(180, 130, 70, 180))
-        painter.drawEllipse(QPointF(0, bowl_y), bowl_w, bowl_w * 0.28)
-
-        # Food particles (use emoji via text)
-        font = painter.font()
-        font.setPointSize(16)
-        painter.setFont(font)
-        emojis = ["🐟", "🍣", "🦴"]
-        for i, emoji in enumerate(emojis):
-            phase = (t * 3 + i * 2.1) % 3.0
-            alpha = int(255 * max(0, 1 - phase / 3.0))
-            painter.setPen(QColor(255, 255, 255, alpha))
-            x = math.sin(phase * 4 + i) * 20
-            y = half * 0.1 - phase * 30
-            painter.drawText(QPointF(x - 8, y), emoji)
+        # Small sparkle particles
+        for i in range(4):
+            phase = (t * 5 + i * 1.57) % 2.0
+            alpha = int(200 * max(0, 1 - phase / 2.0))
+            if alpha < 20:
+                continue
+            x = math.cos(phase * 6 + i * 1.2) * 25
+            y = -half * 0.3 - phase * 20
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(QColor(255, 255, 200, alpha))
+            r = 2 + phase * 2
+            painter.drawEllipse(QPointF(x, y), r, r)
 
     # ── WALKING overlay ──
 
