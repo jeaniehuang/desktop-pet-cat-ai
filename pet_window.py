@@ -193,36 +193,22 @@ class PetWindow(QWidget):
     # ── WALKING/BREAK overlay ──
 
     def _draw_walking_overlay(self, painter: QPainter, half: float):
-        """Dizzy effect — spinning stars and 晕晕晕 text."""
+        """Dizzy stars rotating above the head."""
         import math
         t = self._frame
 
-        # Spinning stars around head
+        # Stars spinning in a circle above head
         star_chars = ["💫", "⭐", "✨"]
         for i, ch in enumerate(star_chars):
             angle = t * 3 + i * 2.1
-            radius = half * 0.5 + math.sin(t * 4 + i) * 8
+            radius = half * 0.35
             sx = math.cos(angle) * radius
-            sy = -half * 0.3 + math.sin(angle * 1.5) * radius * 0.5
+            sy = -half * 0.5 + math.sin(angle) * radius * 0.5
             font = painter.font()
             font.setPointSize(14 + i * 2)
             painter.setFont(font)
             painter.setPen(QColor(255, 255, 200, 220 - i * 40))
             painter.drawText(QPointF(sx - 8, sy), ch)
-
-        # "晕" text circling
-        dizzy_chars = ["晕", "晕", "晕"]
-        for i, ch in enumerate(dizzy_chars):
-            angle = t * 5 + i * 2.09
-            radius = half * 0.35
-            dx = math.cos(angle) * radius
-            dy = -half * 0.2 + math.sin(angle * 2) * radius * 0.4
-            font = painter.font()
-            font.setPointSize(12 + i)
-            alpha = int(180 + 75 * math.sin(t * 3 + i))
-            painter.setFont(font)
-            painter.setPen(QColor(255, 200, 100, max(30, alpha)))
-            painter.drawText(QPointF(dx - 10, dy), ch)
 
     # ── drag ──
 
