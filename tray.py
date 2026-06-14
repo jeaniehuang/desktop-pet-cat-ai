@@ -34,29 +34,29 @@ class TrayIcon(QSystemTrayIcon):
         super().__init__(_make_dot_icon(self.RED))
         self.setToolTip("桌面萌宠 🐱")
 
-        menu = QMenu()
+        self._menu = QMenu()  # keep reference to prevent GC
 
-        eat_action = QAction("🍽️ 强制进食", menu)
+        eat_action = QAction("🍽️ 强制进食", self._menu)
         eat_action.triggered.connect(self.force_eating.emit)
-        menu.addAction(eat_action)
+        self._menu.addAction(eat_action)
 
-        sleep_action = QAction("😴 强制睡觉", menu)
+        sleep_action = QAction("😴 强制睡觉", self._menu)
         sleep_action.triggered.connect(self.force_sleeping.emit)
-        menu.addAction(sleep_action)
+        self._menu.addAction(sleep_action)
 
-        menu.addSeparator()
+        self._menu.addSeparator()
 
-        break_action = QAction("🏃 立即休息提醒", menu)
+        break_action = QAction("🏃 立即休息提醒", self._menu)
         break_action.triggered.connect(self.trigger_break.emit)
-        menu.addAction(break_action)
+        self._menu.addAction(break_action)
 
-        menu.addSeparator()
+        self._menu.addSeparator()
 
-        quit_action = QAction("❌ 退出", menu)
+        quit_action = QAction("❌ 退出", self._menu)
         quit_action.triggered.connect(self._on_quit)
-        menu.addAction(quit_action)
+        self._menu.addAction(quit_action)
 
-        self.setContextMenu(menu)
+        self.setContextMenu(self._menu)
 
     def update_status(self, state: str):
         """Update tray icon color: green=eating, red=sleeping."""
