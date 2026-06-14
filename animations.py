@@ -112,11 +112,11 @@ class AnimationManager(QObject):
     # ── break reminder ──
 
     def _trigger_break(self):
-        """Jump the cat across the screen 3 times with walking animation."""
+        """Patrol along the bottom of the screen."""
         was_eating = self._state == "eating"
         self._stop_all()
 
-        # Switch to walking overlay
+        # Switch to walking/dizzy overlay
         self._win.set_state("walking")
 
         screen = QWidget.screen(self._win) or QWidget.primaryScreen(self._win)
@@ -129,22 +129,36 @@ class AnimationManager(QObject):
         ww, wh = self._win.width(), self._win.height()
         start_pos = self._win.pos()
 
-        jumps = QSequentialAnimationGroup()
+        # Bottom edge patrol line
+        y = geo.bottom() - wh - 10
+        left_x = geo.left() + 10
+        right_x = geo.right() - ww - 10
 
-        for i in range(3):
-            tx = random.randint(geo.left() + 30, geo.right() - ww - 30)
-            ty = random.randint(geo.top() + 30, geo.bottom() - wh - 30)
-            target = QRect(tx, ty, ww, wh)
+        patrol = QSequentialAnimationGroup()
 
-            anim = QPropertyAnimation(self._win, b"geometry")
-            anim.setDuration(600)
-            if i == 0:
-                anim.setStartValue(QRect(start_pos.x(), start_pos.y(), ww, wh))
-            anim.setEndValue(target)
-            anim.setEasingCurve(QEasingCurve.OutCubic)
-            jumps.addAnimation(anim)
+        # Segment 1: go to bottom-left
+        anim1 = QPropertyAnimation(self._win, b"geometry")
+        anim1.setDuration(1500)
+        anim1.setStartValue(QRect(start_pos.x(), start_pos.y(), ww, wh))
+        anim1.setEndValue(QRect(left_x, y, ww, wh))
+        anim1.setEasingCurve(QEasingCurve.InOutCubic)
+        patrol.addAnimation(anim1)
 
-        def _on_jumps_finished():
+        # Segment 2: walk across bottom to right
+        anim2 = QPropertyAnimation(self._win, b"geometry")
+        anim2.setDuration(3000)
+        anim2.setEndValue(QRect(right_x, y, ww, wh))
+        anim2.setEasingCurve(QEasingCurve.InOutCubic)
+        patrol.addAnimation(anim2)
+
+        # Segment 3: walk back to left
+        anim3 = QPropertyAnimation(self._win, b"geometry")
+        anim3.setDuration(3000)
+        anim3.setEndValue(QRect(left_x, y, ww, wh))
+        anim3.setEasingCurve(QEasingCurve.InOutCubic)
+        patrol.addAnimation(anim3)
+
+        def _on_patrol_finished():
             self._win.clamp_to_screen()
             new_state = "eating" if was_eating else "sleeping"
             self._state = new_state
@@ -156,8 +170,8 @@ class AnimationManager(QObject):
             self._break_timer.start()
             self.break_finished.emit()
 
-        jumps.finished.connect(_on_jumps_finished)
-        jumps.start()
+        patrol.finished.connect(_on_patrol_finished)
+        patrol.start()
         self._animations = []
 
         # Show tooltip
