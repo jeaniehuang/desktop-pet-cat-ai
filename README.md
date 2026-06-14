@@ -14,6 +14,16 @@ A desktop companion cat that reacts to your AI agent's token consumption. Lives 
 | 🏃 **Working 工作中** | Claude consuming tokens<br>Claude 消耗 token 中 | Randomly picks `running.gif` / `running-left.gif` / `running-right.gif`<br>随机切换三个方向跑步 GIF |
 | ⏸️ **Break 休息提醒** | Every 30 minutes (or manual trigger)<br>每 30 分钟（或手动触发） | `review.gif` + 💫⭐✨ spinning above head, slides from right to left along screen bottom in 20s<br>`review.gif` + 💫⭐✨ 头顶旋转，沿屏幕底部从右到左滑行 20 秒 |
 
+sleeping:
+<img width="1733" height="561" alt="52b679cd606b0ddbe7d89e9ba80d7f6a" src="https://github.com/user-attachments/assets/325d32f0-1482-4329-b7e1-180570eed3a3" />
+
+working:
+<img width="1172" height="624" alt="1d71a061cf74b38287d1b2f1c6e906ba" src="https://github.com/user-attachments/assets/3b0b27d2-fc0c-487a-bf28-4927c0352a57" />
+
+break:
+<img width="1893" height="288" alt="image" src="https://github.com/user-attachments/assets/bd691760-8ed0-4f58-b83f-1eada5a24704" />
+
+
 ## How It Works / 工作原理
 
 Reads `/tmp/claude-status-light` (or `%TEMP%\claude-status-light` on Windows), which is written by Claude Code hooks:
