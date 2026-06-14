@@ -8,6 +8,7 @@ Every 30 min: jumps around to remind you to take a break.
 
 import sys
 import os
+import ctypes
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication
 
@@ -20,17 +21,35 @@ from tray import TrayIcon
 LOCK_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".pet.lock")
 
 
+def _pid_running(pid: int) -> bool:
+    """Check if a process is running (Windows-compatible via ctypes)."""
+    PROCESS_QUERY_LIMITED_INFO = 0x1000
+    try:
+        handle = ctypes.windll.kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFO, False, pid)
+        if handle:
+            ctypes.windll.kernel32.CloseHandle(handle)
+            return True
+        return False
+    except OSError:
+        return False
+
+
 def main():
-    # Prevent duplicate instances
+    # Prevent duplicate instances (Windows-compatible lock)
     if os.path.exists(LOCK_FILE):
         with open(LOCK_FILE) as f:
             try:
-                import signal
-                os.kill(int(f.read().strip()), 0)
-                print("Pet is already running.")
-                return
-            except (ValueError, ProcessLookupError, OSError):
-                os.remove(LOCK_FILE)
+                old_pid = int(f.read().strip())
+            except ValueError:
+                old_pid = 0
+        if old_pid and _pid_running(old_pid):
+            print("Pet is already running.")
+            return
+        # Stale lock file — clean up
+        try:
+            os.remove(LOCK_FILE)
+        except OSError:
+            pass
 
     with open(LOCK_FILE, "w") as f:
         f.write(str(os.getpid()))
