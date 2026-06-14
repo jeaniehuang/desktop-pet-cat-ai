@@ -1,8 +1,10 @@
 """PetWindow — frameless transparent always-on-top window showing the cat."""
 
 import math
+import random
 from PySide6.QtCore import Qt, Property, QPoint, QPointF, QRectF
-from PySide6.QtGui import QPainter, QPainterPath, QPixmap, QColor, QPen, QBrush, QFont
+from PySide6.QtGui import (QPainter, QPainterPath, QPixmap, QColor,
+                            QPen, QBrush, QFont, QTransform)
 from PySide6.QtWidgets import QWidget
 
 
@@ -16,7 +18,7 @@ class PetWindow(QWidget):
         self.setWindowFlags(
             Qt.FramelessWindowHint
             | Qt.WindowStaysOnTopHint
-            | Qt.Tool  # doesn't appear in taskbar
+            | Qt.Tool
         )
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setAttribute(Qt.WA_ShowWithoutActivating)
@@ -25,88 +27,90 @@ class PetWindow(QWidget):
         self._rotation = 0.0
         self._state = "sleeping"
 
-        # Load and prepare the cat image
+        # Load image
         self.original = QPixmap(image_path)
         if self.original.isNull():
             raise FileNotFoundError(f"Cannot load image: {image_path}")
 
         self.setFixedSize(self.SIZE, self.SIZE)
-
-        # Drag state
         self._drag_offset = QPoint()
 
-        # Cache the scaled pixmap
         self._scaled = self.original.scaled(
             self.SIZE, self.SIZE,
             Qt.KeepAspectRatioByExpanding,
             Qt.SmoothTransformation
         )
 
-        # Animation frame counters
+        # Frame counters
         self._frame = 0.0
-        self._snore_bubble = 0.0
-        self._food_particles: list[tuple[float, float, float, QColor]] = []
 
-        # Position at bottom-right of primary screen
+        # Sleeping state
+        self._snore_t = 0.0
+
+        # Eating state — emoji food particles: (x, y, vy, life, emoji_char)
+        self._food: list[list] = []
+        self._eat_spawn_timer = 0.0
+
+        # Walking state — foot bob phase
+        self._walk_bob = 0.0
+
+        # Position at bottom-right
         screen = QWidget.screen(self) or QWidget.primaryScreen(self)
         if screen:
             geo = screen.availableGeometry()
-            x = geo.right() - self.SIZE - 30
-            y = geo.bottom() - self.SIZE - 30
-            self.move(x, y)
+            self.move(geo.right() - self.SIZE - 30,
+                      geo.bottom() - self.SIZE - 30)
 
     # ── state ──
 
     def set_state(self, state: str):
         self._state = state
         self._frame = 0.0
+        self._food.clear()
+        self._snore_t = 0.0
+        self._walk_bob = 0.0
         self.update()
 
-    # ── animatable properties ──
+    # ── animatable Qt properties ──
 
-    def get_scale(self) -> float:
-        return self._scale
-
-    def set_scale(self, value: float):
-        self._scale = value
-        self.update()
-
+    def get_scale(self) -> float: return self._scale
+    def set_scale(self, v: float): self._scale = v; self.update()
     scale = Property(float, get_scale, set_scale)
 
-    def get_rotation(self) -> float:
-        return self._rotation
-
-    def set_rotation(self, value: float):
-        self._rotation = value
-        self.update()
-
+    def get_rotation(self) -> float: return self._rotation
+    def set_rotation(self, v: float): self._rotation = v; self.update()
     rotation = Property(float, get_rotation, set_rotation)
 
-    # ── frame tick (called by animation timer) ──
+    # ── frame tick ──
 
     def tick(self, dt: float):
-        """Advance animation frame."""
         self._frame += dt
+
         if self._state == "sleeping":
-            self._snore_bubble += dt
-            if self._snore_bubble > 3.0:
-                self._snore_bubble = 0.0
+            self._snore_t += dt
+            if self._snore_t > 4.0:
+                self._snore_t = 0.0
+
         elif self._state == "eating":
-            # Spawn food particles periodically
-            if len(self._food_particles) < 8 and int(self._frame * 10) % 3 == 0:
-                import random
-                colors = [
-                    QColor(255, 180, 100),  # salmon
-                    QColor(255, 220, 100),  # gold
-                    QColor(255, 150, 150),  # pink
-                    QColor(200, 230, 100),  # lime
-                ]
-                self._food_particles.append((
-                    random.uniform(-15, 15),  # x offset from center
-                    20.0,                      # y (below center = mouth area)
-                    random.uniform(2.0, 5.0), # size
-                    random.choice(colors),
-                ))
+            self._eat_spawn_timer += dt
+            if self._eat_spawn_timer > 0.3 and len(self._food) < 12:
+                self._eat_spawn_timer = 0.0
+                emojis = ["🐟", "🍣", "🦴", "🍖"]
+                self._food.append([
+                    random.uniform(-25, 25),   # x
+                    random.uniform(5, 25),      # start y (mouth area)
+                    random.uniform(-35, -20),   # vy (upward)
+                    random.uniform(1.0, 1.8),   # lifetime
+                    random.choice(emojis),
+                ])
+            # Update food particles
+            for f in self._food:
+                f[1] += f[2] * dt          # move
+                f[3] -= dt                 # decay life
+
+        elif self._state == "walking":
+            self._walk_bob += dt * 12
+
         self.update()
 
     # ── painting ──
@@ -118,130 +122,179 @@ class PetWindow(QWidget):
 
         half = self.SIZE / 2
 
-        # Transform around center
         painter.translate(half, half)
         painter.scale(self._scale, self._scale)
+
+        # Walking bob
+        if self._state == "walking":
+            painter.translate(0, math.sin(self._walk_bob) * 6)
+
         painter.rotate(self._rotation)
 
-        # Clip to circle
+        # Circular clip
         clip = QPainterPath()
         clip.addEllipse(QPointF(0, 0), half - 1, half - 1)
         painter.setClipPath(clip)
 
-        # Draw cat
-        painter.drawPixmap(-half, -half, self._scaled)
-
-        # ── state-specific overlays ──
+        # ── Draw cat ──
         if self._state == "sleeping":
-            self._draw_sleeping_overlay(painter, half)
+            # Sleepy blue tint
+            painter.drawPixmap(-half, -half, self._scaled)
+            painter.fillRect(-half, -half, self.SIZE, self.SIZE,
+                             QColor(30, 40, 90, 80))
+        else:
+            painter.drawPixmap(-half, -half, self._scaled)
+
+        # ── State overlays ──
+        if self._state == "sleeping":
+            self._draw_sleeping(painter, half)
         elif self._state == "eating":
-            self._draw_eating_overlay(painter, half)
+            self._draw_eating(painter, half)
         elif self._state == "walking":
-            self._draw_walking_overlay(painter, half)
+            self._draw_walking(painter, half)
 
         painter.end()
 
-    # ── sleeping overlay ──
+    # ═══════════════════════════════════════════
+    #  SLEEPING — closed eyes, snore bubble, Zzz
+    # ═══════════════════════════════════════════
 
-    def _draw_sleeping_overlay(self, painter: QPainter, half: float):
-        """Draw closed eyes and snore bubble."""
-        # Closed eyes — two downward arcs (like ^ but curved)
-        eye_y = -half * 0.25
-        eye_w = half * 0.3
-        eye_h = half * 0.12
-
-        pen = QPen(QColor(40, 40, 40, 180), 2.0)
+    def _draw_sleeping(self, painter: QPainter, half: float):
+        # Bold closed eyes — thick horizontal lines
+        pen = QPen(QColor(20, 20, 30, 220), 3.5)
         pen.setCapStyle(Qt.RoundCap)
         painter.setPen(pen)
-        painter.setBrush(Qt.NoBrush)
 
-        # Left eye
-        left_eye = QRectF(-half * 0.38, eye_y, eye_w, eye_h)
-        painter.drawArc(left_eye, 0, 180 * 16)  # top half = closed
+        eye_y = -half * 0.22
+        eye_len = half * 0.22
+        painter.drawLine(QPointF(-half * 0.4, eye_y),
+                         QPointF(-half * 0.4 + eye_len, eye_y))
+        painter.drawLine(QPointF(half * 0.15, eye_y),
+                         QPointF(half * 0.15 + eye_len, eye_y))
 
-        # Right eye
-        right_eye = QRectF(half * 0.08, eye_y, eye_w, eye_h)
-        painter.drawArc(right_eye, 0, 180 * 16)
-
-        # Snore bubble (grows and pops)
-        if self._snore_bubble < 2.5:
-            t = self._snore_bubble
-            bubble_r = 3 + t * 5
-            alpha = int(180 * (1 - t / 2.8))
-            painter.setPen(Qt.NoPen)
+        # Snore bubble
+        t = self._snore_t
+        if t < 3.5:
+            r = 4 + t * 6
+            alpha = int(220 * (1 - t / 3.8))
+            bx = half * 0.3 + math.sin(t * 2) * 4
+            by = -half * 0.25 - t * 14
+            painter.setPen(QPen(QColor(150, 180, 240, max(0, alpha)), 2))
             painter.setBrush(QColor(200, 220, 255, max(0, alpha)))
-            painter.drawEllipse(QPointF(half * 0.35, -half * 0.3 - t * 15), bubble_r, bubble_r)
+            painter.drawEllipse(QPointF(bx, by), r, r)
 
-    # ── eating overlay ──
+        # Large Zzz text floating
+        if 0.5 < t < 3.0:
+            font = QFont("Segoe UI Emoji", 16)
+            painter.setFont(font)
+            painter.setPen(QColor(180, 200, 255, int(200 * (1 - t / 3.5))))
+            zy = -half * 0.1 - (t - 0.5) * 20
+            painter.drawText(QPointF(half * 0.25, zy), "Z")
 
-    def _draw_eating_overlay(self, painter: QPainter, half: float):
-        """Draw open mouth and bouncing food particles."""
-        # Open mouth — small dark ellipse
-        mouth_y = half * 0.2
+    # ═══════════════════════════════════════════
+    #  EATING — mouth, food bowl, food particles
+    # ═══════════════════════════════════════════
+
+    def _draw_eating(self, painter: QPainter, half: float):
+        # ── Food bowl (bottom) ──
+        bowl_y = half * 0.55
+        bowl_w = half * 0.55
+
+        # Bowl outer
+        painter.setPen(QPen(QColor(140, 90, 40), 3))
+        painter.setBrush(QColor(180, 130, 70, 200))
+        painter.drawEllipse(QPointF(0, bowl_y), bowl_w, bowl_w * 0.30)
+
+        # Bowl rim highlight
+        painter.setPen(QPen(QColor(220, 180, 120), 2))
+        painter.setBrush(Qt.NoBrush)
+        painter.drawEllipse(QPointF(0, bowl_y - 2), bowl_w - 1, (bowl_w - 1) * 0.28)
+
+        # Food in bowl
         painter.setPen(Qt.NoPen)
-        painter.setBrush(QColor(60, 30, 30, 180))
-        chew = abs(math.sin(self._frame * 8)) * 0.5 + 0.3
-        mouth_w = half * 0.18 * chew
-        mouth_h = half * 0.1 * chew
+        painter.setBrush(QColor(180, 130, 60, 180))
+        for dx in [-12, -4, 5, 14]:
+            painter.drawEllipse(QPointF(dx, bowl_y + dx * 0.1), 6, 3)
+
+        # ── Mouth ──
+        chew = abs(math.sin(self._frame * 10)) * 0.6 + 0.3
+        mouth_y = half * 0.15
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QColor(50, 20, 20, 200))
+        mouth_w = half * 0.25 * chew
+        mouth_h = half * 0.13 * chew
         painter.drawEllipse(QPointF(0, mouth_y), mouth_w, mouth_h)
 
-        # Food particles bouncing
-        for px, py, size, color in list(self._food_particles):
-            # Move upward and fade
-            life = self._frame
-            y = py - life * 8 - self._food_particles.index((px, py, size, color)) * 3
-            x = px + math.sin(life * 8) * 3
-            alpha = int(max(0, 255 - life * 80))
-            if alpha <= 0:
-                self._food_particles.remove((px, py, size, color))
+        # Tongue
+        if chew > 0.5:
+            painter.setBrush(QColor(220, 100, 120, 150))
+            painter.drawEllipse(QPointF(0, mouth_y + mouth_h * 0.3), mouth_w * 0.6, mouth_h * 0.4)
+
+        # ── Food particles (emoji) flying up ──
+        font = QFont("Segoe UI Emoji", 18)
+        painter.setFont(font)
+        for f in self._food[:]:
+            life_pct = f[3] / 1.8
+            if life_pct <= 0:
+                self._food.remove(f)
                 continue
-            color.setAlpha(alpha)
-            painter.setBrush(color)
-            painter.drawEllipse(QPointF(x, y), size, size)
+            alpha = int(255 * life_pct)
+            painter.setPen(QColor(255, 255, 255, alpha))
+            painter.drawText(QPointF(f[0] - 9, f[1]), f[4])
 
-        # Bowl at bottom
-        painter.setPen(QPen(QColor(120, 80, 40, 160), 1.5))
-        painter.setBrush(QColor(160, 120, 70, 100))
-        bowl_y = half * 0.45
-        bowl_w = half * 0.4
-        painter.drawEllipse(QPointF(0, bowl_y), bowl_w, bowl_w * 0.35)
+    # ═══════════════════════════════════════════
+    #  WALKING — big eyes, motion lines, dust
+    # ═══════════════════════════════════════════
 
-    # ── walking overlay ──
-
-    def _draw_walking_overlay(self, painter: QPainter, half: float):
-        """Draw motion lines and active expression."""
-        # Alert eyes — two small open circles
-        eye_y = -half * 0.22
-        painter.setPen(Qt.NoPen)
-        painter.setBrush(QColor(255, 255, 255, 200))
+    def _draw_walking(self, painter: QPainter, half: float):
+        # ── Big alert eyes ──
+        eye_y = -half * 0.20
+        eye_r = 8
+        painter.setPen(QPen(QColor(40, 40, 40), 2))
+        painter.setBrush(QColor(255, 255, 255, 240))
 
         # Left eye
-        painter.drawEllipse(QPointF(-half * 0.22, eye_y), 5, 5)
+        painter.drawEllipse(QPointF(-half * 0.28, eye_y), eye_r, eye_r)
         # Right eye
-        painter.drawEllipse(QPointF(half * 0.22, eye_y), 5, 5)
+        painter.drawEllipse(QPointF(half * 0.28, eye_y), eye_r, eye_r)
 
-        # Pupils
-        painter.setBrush(QColor(30, 30, 30))
-        painter.drawEllipse(QPointF(-half * 0.22, eye_y), 2.5, 2.5)
-        painter.drawEllipse(QPointF(half * 0.22, eye_y), 2.5, 2.5)
+        # Pupils — look in movement direction
+        painter.setBrush(QColor(20, 20, 20))
+        painter.drawEllipse(QPointF(-half * 0.26, eye_y), 3.5, 3.5)
+        painter.drawEllipse(QPointF(half * 0.30, eye_y), 3.5, 3.5)
 
-        # Motion lines behind
-        painter.setPen(QPen(QColor(150, 150, 150, 120), 1.5))
-        speed = abs(math.sin(self._frame * 10)) * 3
+        # Eye shine
+        painter.setBrush(QColor(255, 255, 255))
+        painter.drawEllipse(QPointF(-half * 0.24, eye_y - 2), 1.5, 1.5)
+        painter.drawEllipse(QPointF(half * 0.32, eye_y - 2), 1.5, 1.5)
+
+        # ── Motion lines behind ──
         for i in range(3):
-            lx = -half - 5 - i * 8
-            painter.drawLine(QPointF(lx, -5 + i * 5), QPointF(lx - 10 + speed, -5 + i * 5 - speed))
+            lx = -half - 10 - i * 12
+            ly = -8 + i * 9
+            painter.setPen(QPen(QColor(140, 140, 160, 160 - i * 40), 2.5))
+            painter.drawLine(QPointF(lx, ly), QPointF(lx - 14, ly + 2))
+            painter.drawLine(QPointF(lx - 3, ly + 1), QPointF(lx - 17, ly + 3))
 
-        # Dust puffs at bottom
+        # ── Dust clouds at feet ──
         painter.setPen(Qt.NoPen)
-        for i in range(2):
-            px = -half * 0.5 + i * half
-            py = half * 0.7 - i * 5
-            r = 3 + abs(math.sin(self._frame * 12 + i)) * 3
-            painter.setBrush(QColor(180, 170, 150, 80))
-            painter.drawEllipse(QPointF(px, py), r, r * 0.6)
+        for i in range(3):
+            phase = self._walk_bob + i * 2.1
+            px = -10 + i * 12 + math.sin(phase) * 4
+            py = half * 0.6 - abs(math.cos(phase)) * 6
+            r = 4 + abs(math.sin(phase)) * 4
+            painter.setBrush(QColor(200, 190, 170, 100))
+            painter.drawEllipse(QPointF(px, py), r, r * 0.5)
 
-    # ── drag to reposition ──
+        # ── Little legs ──
+        painter.setPen(QPen(QColor(60, 40, 30, 180), 3))
+        painter.setBrush(QColor(70, 50, 30, 160))
+        for i in range(2):
+            lx = -half * 0.3 + i * half * 0.6
+            ly = half * 0.75 - abs(math.sin(self._walk_bob + i * 3.14)) * 8
+            painter.drawEllipse(QPointF(lx, ly), 8, 12)
+
+    # ── drag ──
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
@@ -251,10 +304,9 @@ class PetWindow(QWidget):
         if event.buttons() & Qt.LeftButton:
             self.move(event.globalPosition().toPoint() - self._drag_offset)
 
-    # ── clamp to screen ──
+    # ── clamp ──
 
     def clamp_to_screen(self):
-        """Ensure the window stays within visible screen bounds."""
         screen = QWidget.screen(self) or QWidget.primaryScreen(self)
         if not screen:
             return
