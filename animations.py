@@ -66,46 +66,8 @@ class AnimationManager(QObject):
     # ── eating ──
 
     def _start_eating(self):
-        w = self._win
-
-        # Fast jittery bounce (x + y oscillation)
-        bounce = QPropertyAnimation(w, b"geometry")
-        bounce.setDuration(200)
-        start_geo = w.geometry()
-        bounce.setKeyValueAt(0.0, start_geo)
-        bounce.setKeyValueAt(0.2, start_geo.translated(4, -12))
-        bounce.setKeyValueAt(0.4, start_geo.translated(-4, -4))
-        bounce.setKeyValueAt(0.6, start_geo.translated(3, -14))
-        bounce.setKeyValueAt(0.8, start_geo.translated(-3, -6))
-        bounce.setKeyValueAt(1.0, start_geo)
-        bounce.setLoopCount(-1)
-        bounce.setEasingCurve(QEasingCurve.OutInSine)
-
-        # Pumping scale
-        scale = QPropertyAnimation(w, b"scale")
-        scale.setDuration(300)
-        scale.setKeyValueAt(0.0, 1.0)
-        scale.setKeyValueAt(0.3, 1.12)
-        scale.setKeyValueAt(0.6, 0.95)
-        scale.setKeyValueAt(1.0, 1.0)
-        scale.setLoopCount(-1)
-        scale.setEasingCurve(QEasingCurve.OutInSine)
-
-        # Wide fast sway
-        sway = QPropertyAnimation(w, b"rotation")
-        sway.setDuration(350)
-        sway.setKeyValueAt(0.0, -8)
-        sway.setKeyValueAt(0.25, 6)
-        sway.setKeyValueAt(0.5, -5)
-        sway.setKeyValueAt(0.75, 8)
-        sway.setKeyValueAt(1.0, -8)
-        sway.setLoopCount(-1)
-        sway.setEasingCurve(QEasingCurve.OutInSine)
-
-        bounce.start()
-        scale.start()
-        sway.start()
-        self._animations = [bounce, scale, sway]
+        # GIF handles the animation — no geometric transforms needed
+        self._animations = []
 
     # ── sleeping ──
 
