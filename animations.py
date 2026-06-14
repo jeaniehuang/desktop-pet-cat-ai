@@ -112,7 +112,7 @@ class AnimationManager(QObject):
     # ── break reminder ──
 
     def _trigger_break(self):
-        """Slide along the bottom of the screen from right to left."""
+        """Patrol: appear at right → slide left 20s → disappear → repeat."""
         was_eating = self._state == "eating"
         self._stop_all()
 
@@ -129,16 +129,38 @@ class AnimationManager(QObject):
 
         y = geo.bottom() - wh - 10
         right_x = geo.right() - ww - 10
-        left_x = geo.left() + 10
+        left_x = geo.left() - ww - 10  # off-screen left
 
-        # Single slide: current position → bottom-left
-        slide = QPropertyAnimation(self._win, b"geometry")
-        slide.setDuration(4000)
-        slide.setStartValue(QRect(right_x, y, ww, wh))
-        slide.setEndValue(QRect(left_x, y, ww, wh))
-        slide.setEasingCurve(QEasingCurve.Linear)
+        self._patrol_loops = 0
+        self._patrol_max = 2
 
-        def _on_slide_finished():
+        def _do_patrol():
+            if self._patrol_loops >= self._patrol_max:
+                _on_patrol_done()
+                return
+
+            # Appear at bottom-right
+            self._win.move(right_x, y)
+            self._win.show()
+
+            # Slide to off-screen left
+            slide = QPropertyAnimation(self._win, b"geometry")
+            slide.setDuration(20000)
+            slide.setStartValue(QRect(right_x, y, ww, wh))
+            slide.setEndValue(QRect(left_x, y, ww, wh))
+            slide.setEasingCurve(QEasingCurve.Linear)
+
+            def _on_slide_done():
+                self._win.hide()
+                self._patrol_loops += 1
+                QTimer.singleShot(500, _do_patrol)
+
+            slide.finished.connect(_on_slide_done)
+            slide.start()
+            self._animations.append(slide)
+
+        def _on_patrol_done():
+            self._win.show()
             self._win.clamp_to_screen()
             new_state = "eating" if was_eating else "sleeping"
             self._state = new_state
@@ -150,10 +172,7 @@ class AnimationManager(QObject):
             self._break_timer.start()
             self.break_finished.emit()
 
-        slide.finished.connect(_on_slide_finished)
-        slide.start()
-        self._animations = [slide]
-
+        _do_patrol()
         self._show_break_tooltip()
 
     def _show_break_tooltip(self):
