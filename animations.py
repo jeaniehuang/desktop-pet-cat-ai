@@ -112,7 +112,7 @@ class AnimationManager(QObject):
     # ── break reminder ──
 
     def _trigger_break(self):
-        """Patrol: appear at right → slide left 20s → disappear → repeat."""
+        """Patrol: appear at right → slide left 20s → disappear → restore."""
         was_eating = self._state == "eating"
         self._stop_all()
 
@@ -131,48 +131,38 @@ class AnimationManager(QObject):
         right_x = geo.right() - ww - 10
         left_x = geo.left() - ww - 10  # off-screen left
 
-        self._patrol_loops = 0
-        self._patrol_max = 2
+        # Appear at bottom-right
+        self._win.move(right_x, y)
+        self._win.show()
 
-        def _do_patrol():
-            if self._patrol_loops >= self._patrol_max:
-                _on_patrol_done()
-                return
+        # Slide to off-screen left
+        slide = QPropertyAnimation(self._win, b"geometry")
+        slide.setDuration(20000)
+        slide.setStartValue(QRect(right_x, y, ww, wh))
+        slide.setEndValue(QRect(left_x, y, ww, wh))
+        slide.setEasingCurve(QEasingCurve.Linear)
 
-            # Appear at bottom-right
-            self._win.move(right_x, y)
-            self._win.show()
+        def _on_slide_done():
+            self._win.hide()
+            def _restore():
+                new_state = "eating" if was_eating else "sleeping"
+                self._state = new_state
+                self._win.set_state(new_state)
+                if new_state == "eating":
+                    self._start_eating()
+                else:
+                    self._start_sleeping()
+                self._win.move(right_x, y)
+                self._win.show()
+                self._win.clamp_to_screen()
+                self._break_timer.start()
+                self.break_finished.emit()
+            QTimer.singleShot(500, _restore)
 
-            # Slide to off-screen left
-            slide = QPropertyAnimation(self._win, b"geometry")
-            slide.setDuration(20000)
-            slide.setStartValue(QRect(right_x, y, ww, wh))
-            slide.setEndValue(QRect(left_x, y, ww, wh))
-            slide.setEasingCurve(QEasingCurve.Linear)
+        slide.finished.connect(_on_slide_done)
+        slide.start()
+        self._animations = [slide]
 
-            def _on_slide_done():
-                self._win.hide()
-                self._patrol_loops += 1
-                QTimer.singleShot(500, _do_patrol)
-
-            slide.finished.connect(_on_slide_done)
-            slide.start()
-            self._animations.append(slide)
-
-        def _on_patrol_done():
-            self._win.show()
-            self._win.clamp_to_screen()
-            new_state = "eating" if was_eating else "sleeping"
-            self._state = new_state
-            self._win.set_state(new_state)
-            if new_state == "eating":
-                self._start_eating()
-            else:
-                self._start_sleeping()
-            self._break_timer.start()
-            self.break_finished.emit()
-
-        _do_patrol()
         self._show_break_tooltip()
 
     def _show_break_tooltip(self):
