@@ -1,3 +1,6 @@
 __pycache__/
 *.pyc
 .pet.lock
+build/
+dist/
+*.spec
