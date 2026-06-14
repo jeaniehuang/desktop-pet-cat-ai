@@ -1,7 +1,7 @@
 """PetWindow — frameless transparent always-on-top window showing the cat."""
 
 from PySide6.QtCore import Qt, Property, QPoint, QPointF
-from PySide6.QtGui import QPainter, QPainterPath, QPixmap, QColor
+from PySide6.QtGui import QPainter, QPainterPath, QPixmap
 from PySide6.QtWidgets import QWidget
 
 
@@ -15,8 +15,7 @@ class PetWindow(QWidget):
         self.setWindowFlags(
             Qt.FramelessWindowHint
             | Qt.WindowStaysOnTopHint
-            | Qt.Tool
-            | Qt.SubWindow  # doesn't appear in taskbar
+            | Qt.Tool  # doesn't appear in taskbar
         )
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setAttribute(Qt.WA_ShowWithoutActivating)
@@ -34,8 +33,14 @@ class PetWindow(QWidget):
         # Drag state
         self._drag_offset = QPoint()
 
+        # Cache the scaled pixmap
+        self._scaled = self.original.scaled(
+            self.SIZE, self.SIZE,
+            Qt.KeepAspectRatioByExpanding,
+            Qt.SmoothTransformation
+        )
+
         # Position at bottom-right of primary screen
-        from PySide6.QtGui import QScreen
         screen = QWidget.screen(self) or QWidget.primaryScreen(self)
         if screen:
             geo = screen.availableGeometry()
@@ -83,13 +88,7 @@ class PetWindow(QWidget):
         painter.setClipPath(path)
 
         # Draw cat
-        scaled = self.original.scaled(
-            self.SIZE, self.SIZE,
-            Qt.KeepAspectRatioByExpanding,
-            Qt.SmoothTransformation
-        )
-        painter.drawPixmap(-half, -half, scaled)
-        painter.end()
+        painter.drawPixmap(-half, -half, self._scaled)
 
     # ── drag to reposition ──
 
@@ -105,7 +104,6 @@ class PetWindow(QWidget):
 
     def clamp_to_screen(self):
         """Ensure the window stays within visible screen bounds."""
-        from PySide6.QtGui import QScreen
         screen = QWidget.screen(self) or QWidget.primaryScreen(self)
         if not screen:
             return
