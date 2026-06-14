@@ -6,9 +6,8 @@ from PySide6.QtCore import (
     QSequentialAnimationGroup, QParallelAnimationGroup, QPoint, QRect,
     Property, Signal
 )
-from PySide6.QtWidgets import QLabel, QWidget, QApplication
-from PySide6.QtGui import QFont, QColor
-from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QLabel, QWidget
+from PySide6.QtGui import QFont
 
 
 class AnimationManager(QObject):
@@ -16,11 +15,19 @@ class AnimationManager(QObject):
 
     break_finished = Signal()
 
+    TICK_MS = 33  # ~30 fps
+
     def __init__(self, pet_window: QWidget):
         super().__init__()
         self._win = pet_window
         self._state = "sleeping"
         self._animations: list[QPropertyAnimation] = []
+
+        # Frame tick timer for overlay animations
+        self._tick_timer = QTimer(self)
+        self._tick_timer.setInterval(self.TICK_MS)
+        self._tick_timer.timeout.connect(self._on_tick)
+        self._tick_timer.start()
 
         # Break timer: 30 minutes
         self._break_timer = QTimer(self)
@@ -29,9 +36,13 @@ class AnimationManager(QObject):
         self._break_timer.start()
 
         # Zzz overlay timer (sleeping)
-        self._zzz_label: QLabel | None = None
         self._zzz_timer = QTimer(self)
         self._zzz_timer.timeout.connect(self._show_zzz)
+
+    # ── tick ──
+
+    def _on_tick(self):
+        self._win.tick(self.TICK_MS / 1000.0)
 
     # ── public API ──
 
@@ -41,6 +52,7 @@ class AnimationManager(QObject):
             return
         self._stop_all()
         self._state = state
+        self._win.set_state(state)
 
         if state == "eating":
             self._start_eating()
@@ -120,15 +132,13 @@ class AnimationManager(QObject):
             return
 
         label = QLabel("💤", self._win)
-        label.setFont(QFont("Segoe UI Emoji", 28))
-        label.setStyleSheet("background: transparent; color: white;")
+        label.setFont(QFont("Segoe UI Emoji", 20))
+        label.setStyleSheet("background: transparent; color: #aaccff;")
         label.adjustSize()
-        # Position above the cat
-        cx = (self._win.width() - label.width()) // 2
-        label.move(cx, -label.height())
+        cw = self._win.width()
+        label.move((cw - label.width()) // 2, -label.height())
         label.show()
 
-        # Animate float up
         anim = QPropertyAnimation(label, b"pos")
         anim.setDuration(2500)
         anim.setStartValue(label.pos())
@@ -140,14 +150,17 @@ class AnimationManager(QObject):
     # ── break reminder ──
 
     def _trigger_break(self):
-        """Jump the cat across the screen 3 times."""
+        """Jump the cat across the screen 3 times with walking animation."""
         was_eating = self._state == "eating"
         self._stop_all()
+
+        # Switch to walking overlay
+        self._win.set_state("walking")
 
         screen = QWidget.screen(self._win) or QWidget.primaryScreen(self._win)
         if not screen:
             self._break_timer.start()
-            self.set_state("sleeping" if not was_eating else "eating")
+            self._win.set_state("eating" if was_eating else "sleeping")
             return
 
         geo = screen.availableGeometry()
@@ -171,13 +184,19 @@ class AnimationManager(QObject):
 
         def _on_jumps_finished():
             self._win.clamp_to_screen()
-            self.set_state("eating" if was_eating else "sleeping")
+            new_state = "eating" if was_eating else "sleeping"
+            self._state = new_state
+            self._win.set_state(new_state)
+            if new_state == "eating":
+                self._start_eating()
+            else:
+                self._start_sleeping()
             self._break_timer.start()
             self.break_finished.emit()
 
         jumps.finished.connect(_on_jumps_finished)
         jumps.start()
-        self._animations = []  # sequential group manages itself
+        self._animations = []
 
         # Show tooltip
         self._show_break_tooltip()
