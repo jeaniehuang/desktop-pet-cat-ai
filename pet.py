@@ -54,12 +54,6 @@ def main():
     tray = TrayIcon()
     tray.show()
 
-    # Wire signals
-    monitor.status_changed.connect(_on_status_change)
-    tray.force_eating.connect(lambda: _on_force("eating"))
-    tray.force_sleeping.connect(lambda: _on_force("sleeping"))
-    tray.trigger_break.connect(animator.trigger_break)
-
     # Store state for signal handlers
     app._pet_state = "sleeping"
 
@@ -69,8 +63,7 @@ def main():
         tray.update_status(state)
 
     def _on_force(state: str):
-        """Force a state from tray — ignore the file temporarily."""
-        # Write to the light file so everything stays in sync
+        """Force a state from tray — write to the light file to stay in sync."""
         emoji = "🟢" if state == "eating" else "🔴"
         try:
             with open("/tmp/claude-status-light", "w", encoding="utf-8") as f:
@@ -80,6 +73,12 @@ def main():
         app._pet_state = state
         animator.set_state(state)
         tray.update_status(state)
+
+    # Wire signals (after function definitions so names are in scope)
+    monitor.status_changed.connect(_on_status_change)
+    tray.force_eating.connect(lambda: _on_force("eating"))
+    tray.force_sleeping.connect(lambda: _on_force("sleeping"))
+    tray.trigger_break.connect(animator.trigger_break)
 
     # Initial sync: read current file state
     _on_status_change(monitor.current_state)
