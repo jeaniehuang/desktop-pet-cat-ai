@@ -13,10 +13,10 @@ import random
 EATING_GIFS = ["running.gif", "running-left.gif", "running-right.gif"]
 
 STATE_GIF = {
-    "sleeping": "waiting.gif",   # quiet seated pose
-    "eating":   "running.gif",   # working (randomized on state change)
-    "walking":  "running.gif",   # break reminder jumps
-    "resting":  "idle.gif",      # idle/趴着
+    "sleeping": "review.gif",   # resting/review pose
+    "eating":   "running.gif",  # working (randomized on state change)
+    "walking":  "running.gif",  # break reminder jumps
+    "resting":  "idle.gif",     # idle/趴着
 }
 
 GIFS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "gifs")
