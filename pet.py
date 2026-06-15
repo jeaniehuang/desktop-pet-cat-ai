@@ -14,7 +14,7 @@ from PySide6.QtWidgets import QApplication
 
 from pet_window import PetWindow
 from status_monitor import StatusMonitor
-from status_monitor import STATUS_FILE, COUNTER_FILE
+from status_monitor import STATUS_FILE
 from animations import AnimationManager
 from tray import TrayIcon
 
@@ -76,14 +76,24 @@ def main():
         tray.update_status(state)
 
     def _on_force(state: str):
-        """Force a state from tray — write to both counter and light file."""
+        """Force a state from tray — write heartbeat + status-light."""
+        import glob as _glob
         emoji = "🟢" if state == "eating" else "🔴"
-        counter_val = "1" if state == "eating" else "0"
-        try:
-            with open(COUNTER_FILE, "w", encoding="utf-8") as f:
-                f.write(counter_val + "\n")
-        except OSError:
-            pass
+        if state == "eating":
+            # Create a synthetic heartbeat so the monitor sees it as active
+            hb_path = os.path.join(monitor.temp_dir, "claude-hb-forced")
+            try:
+                with open(hb_path, "w", encoding="utf-8") as f:
+                    f.write("forced\n")
+            except OSError:
+                pass
+        else:
+            # Remove all heartbeat files so the monitor sees idle
+            for p in _glob.glob(os.path.join(monitor.temp_dir, "claude-hb-*")):
+                try:
+                    os.remove(p)
+                except OSError:
+                    pass
         try:
             with open(STATUS_FILE, "w", encoding="utf-8") as f:
                 f.write(emoji + "\n")

@@ -2,7 +2,13 @@
   "permissions": {
     "allow": [
       "Bash(python -c ' *)",
-      "Bash(pip show *)"
+      "Bash(pip show *)",
+      "Bash(pyinstaller --version)",
+      "Bash(pip install *)",
+      "Bash(pyinstaller --onedir --windowed --name=\"DesktopPet\" --add-data=\"gifs;gifs\" pet.py)",
+      "Bash(python -c \"import json; json.load\\(open\\(r'C:\\\\Users\\\\74269\\\\.claude\\\\settings.json'\\)\\); print\\('Valid JSON'\\)\")",
+      "Bash(pyinstaller DesktopPet.spec --clean)",
+      "Bash(tasklist /FI \"IMAGENAME eq DesktopPet.exe\")"
     ]
   },
   "hooks": {
@@ -11,7 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "echo '🟢' > \"$TEMP/claude-status-light\"",
+            "command": "echo \"$(date +%s)\" > \"$TEMP/claude-hb-$$\" && echo '🟢' > \"$TEMP/claude-status-light\"",
             "shell": "bash"
           }
         ]
