@@ -1,4 +1,11 @@
-"""StatusMonitor — polls claude-status-light and emits state changes."""
+"""StatusMonitor — polls claude-activity-count and emits state changes.
+
+Reads a counter file maintained by global Claude Code hooks
+(UserPromptSubmit increments, Stop decrements).
+Counter > 0 → "eating" (at least one window is working).
+Counter == 0 → "sleeping" (all windows idle).
+Falls back to the old claude-status-light file for backward compatibility.
+"""
 
 import os
 from PySide6.QtCore import QObject, Signal, QTimer
@@ -6,9 +13,12 @@ from PySide6.QtCore import QObject, Signal, QTimer
 # On Windows (Git Bash), /tmp maps to %TEMP%, but native Python
 # sees a different /tmp. Resolve to the actual Windows path.
 if os.name == "nt":
-    STATUS_FILE = os.path.join(os.environ.get("TEMP", os.environ.get("TMP", "/tmp")), "claude-status-light")
+    TEMP = os.environ.get("TEMP", os.environ.get("TMP", "/tmp"))
+    COUNTER_FILE = os.path.join(TEMP, "claude-activity-count")
+    STATUS_FILE = os.path.join(TEMP, "claude-status-light")  # backward compat
 else:
-    STATUS_FILE = "/tmp/claude-status-light"
+    COUNTER_FILE = "/tmp/claude-activity-count"
+    STATUS_FILE = "/tmp/claude-status-light"  # backward compat
 
 
 class StatusMonitor(QObject):
@@ -26,16 +36,19 @@ class StatusMonitor(QObject):
         self._poll()
 
     def _poll(self):
+        # Primary: read the atomic counter (global hooks)
         try:
-            with open(STATUS_FILE, "r", encoding="utf-8") as f:
-                content = f.read().strip()
-        except FileNotFoundError:
-            content = ""
-
-        if "🟢" in content:
-            new_state = "eating"
-        else:
-            new_state = "sleeping"
+            with open(COUNTER_FILE, "r", encoding="utf-8") as f:
+                count = int(f.read().strip() or "0")
+            new_state = "eating" if count > 0 else "sleeping"
+        except (FileNotFoundError, ValueError):
+            # Fallback: read the old status-light file (project-local hooks)
+            try:
+                with open(STATUS_FILE, "r", encoding="utf-8") as f:
+                    content = f.read().strip()
+            except FileNotFoundError:
+                content = ""
+            new_state = "eating" if "🟢" in content else "sleeping"
 
         if new_state != self._current:
             self._current = new_state

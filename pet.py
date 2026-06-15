@@ -14,7 +14,7 @@ from PySide6.QtWidgets import QApplication
 
 from pet_window import PetWindow
 from status_monitor import StatusMonitor
-from status_monitor import STATUS_FILE
+from status_monitor import STATUS_FILE, COUNTER_FILE
 from animations import AnimationManager
 from tray import TrayIcon
 
@@ -76,8 +76,14 @@ def main():
         tray.update_status(state)
 
     def _on_force(state: str):
-        """Force a state from tray — write to the light file to stay in sync."""
+        """Force a state from tray — write to both counter and light file."""
         emoji = "🟢" if state == "eating" else "🔴"
+        counter_val = "1" if state == "eating" else "0"
+        try:
+            with open(COUNTER_FILE, "w", encoding="utf-8") as f:
+                f.write(counter_val + "\n")
+        except OSError:
+            pass
         try:
             with open(STATUS_FILE, "w", encoding="utf-8") as f:
                 f.write(emoji + "\n")
